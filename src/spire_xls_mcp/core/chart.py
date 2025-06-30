@@ -2,9 +2,9 @@ import logging
 from typing import Any, Dict, Optional
 from spire.xls import *
 
-from .exceptions import ChartError
+from spire_xls_mcp.utils.exceptions import ChartError
 from .workbook import get_or_create_workbook
-from .cell_utils import  EnumMapper
+from spire_xls_mcp.utils.cell_utils import  EnumMapper
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +55,18 @@ def create_chart_in_sheet(
             chart.ChartTitle = title
 
         # Set axis labels
-        if x_axis:
-            chart.PrimaryCategoryAxis.Title = x_axis
-        if y_axis:
-            chart.PrimaryValueAxis.Title = y_axis
+        if chart.ChartType == ExcelChartType.Pie:
+            if not x_axis or not y_axis:
+                raise ChartError(f"Failed to create pie chart: Both x_axis and y_axis are required")
+            cs = chart.Series[0]
+            cs.CategoryLabels = sheet.Range[x_axis]
+            cs.Values = sheet.Range[y_axis]
+            cs.DataPoints.DefaultDataPoint.DataLabels.HasValue = True
+        else:
+            if x_axis:
+                chart.PrimaryCategoryAxis.Title = x_axis
+            if y_axis:
+                chart.PrimaryValueAxis.Title = y_axis
 
         width = 480
         height = 300

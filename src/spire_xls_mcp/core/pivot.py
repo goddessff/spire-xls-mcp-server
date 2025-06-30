@@ -3,8 +3,8 @@ import logging
 
 from spire.xls import *
 
-from .cell_utils import EnumMapper
-from .exceptions import ValidationError, PivotError
+from spire_xls_mcp.utils.cell_utils import EnumMapper
+from spire_xls_mcp.utils.exceptions import ValidationError, PivotError
 from .workbook import get_or_create_workbook
 
 logger = logging.getLogger(__name__)
@@ -57,20 +57,19 @@ def create_pivot_table(
             subtotal = EnumMapper.get_subtotal_enum(agg_func.lower())
             # Drag the field to the data area.
             pivot_table.DataFields.Add(field, name, subtotal)
-            # Save workbook
-            wb.SaveToFile(filepath)
-
-            return {
-                "message": "Pivot table created successfully",
-                "details": {
-                    "source_range": data_range,
-                    "pivot_sheet": sheet_name,
-                    "rows": rows,
-                    "columns": columns or [],
-                    "values": values,
-                    "aggregation": agg_func
-                }
+        # Save workbook
+        wb.SaveToFile(filepath)
+        return {
+            "message": "Pivot table created successfully",
+            "details": {
+                "source_range": data_range,
+                "pivot_sheet": sheet_name,
+                "rows": rows,
+                "columns": columns or [],
+                "values": values,
+                "aggregation": agg_func
             }
+        }
 
     except (ValidationError, PivotError) as e:
         logger.error(str(e))

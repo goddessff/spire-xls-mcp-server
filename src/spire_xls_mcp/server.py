@@ -6,7 +6,7 @@ from typing import Any, List, Dict, Optional
 from mcp.server.fastmcp import FastMCP
 
 # Import exceptions
-from .exceptions import (
+from spire_xls_mcp.utils.exceptions import (
     ValidationError,
     WorkbookError,
     SheetError,
@@ -19,14 +19,14 @@ from .exceptions import (
 )
 
 
-from .validation import (
+from spire_xls_mcp.core.validation import (
     validate_range_in_sheet_operation as validate_range_impl
 )
-from .chart import create_chart_in_sheet as create_chart_impl
-from .workbook import get_workbook_info
-from .data import write_data
-from .pivot import create_pivot_table as create_pivot_table_impl
-from .sheet import (
+from spire_xls_mcp.core.chart import create_chart_in_sheet as create_chart_impl
+from spire_xls_mcp.core.workbook import get_workbook_info
+from spire_xls_mcp.core.data import write_data
+from spire_xls_mcp.core.pivot import create_pivot_table as create_pivot_table_impl
+from spire_xls_mcp.core.sheet import (
     copy_sheet,
     delete_sheet,
     rename_sheet,
@@ -34,7 +34,7 @@ from .sheet import (
     unmerge_range,
     apply_autofilter as apply_autofilter_impl
 )
-from .conversion import convert_workbook as convert_workbook_impl
+from spire_xls_mcp.core.conversion import convert_workbook as convert_workbook_impl
 
 # Configure logging
 logging.basicConfig(
@@ -110,7 +110,7 @@ def apply_formula(
     try:
         full_path = get_excel_path(filepath)
 
-        from .calculations import apply_formula as apply_formula_impl
+        from spire_xls_mcp.core.calculations import apply_formula as apply_formula_impl
         result = apply_formula_impl(full_path, sheet_name, cell, formula)
         return result["message"]
     except (ValidationError, CalculationError) as e:
@@ -152,22 +152,47 @@ def format_range(
         underline (bool, optional): Whether to apply underline formatting
         font_size (int, optional): Font size to apply
         font_color (str, optional): Font color as hex code (e.g., "#FF0000")
-        bg_color (str, optional): Background color as hex code
-        alignment (str, optional): Text alignment (e.g., "center", "left", "right")
+        bg_color (str, optional): Background color as hex code (e.g., "#FFFF00")
+        border_style (str, optional): Border style (thin, medium, thick, double)
+        border_color (str, optional): Border color as hex code (e.g., "#000000")
         number_format (str, optional): Excel number format code
-        border_style (str, optional): Border style for the range
-        border_color (str, optional): Border color as hex code
+        alignment (str, optional): Text alignment (left, center, right, justify)
         wrap_text (bool, optional): Whether to enable text wrapping
         merge_cells (bool, optional): Whether to merge the cells in the range
-        protection (dict, optional): Cell protection settings
-        conditional_format (dict, optional): Conditional formatting rules
+        protection (dict, optional): Cell protection settings dict with keys 'locked' and/or 'hidden'
+        conditional_format (dict, optional): Conditional formatting rules dict with keys:
+            - "type": Condition type, supported values:
+                - "cell"/"单元格值": Cell value condition
+                - "text"/"文本": Contains text condition
+                - "date"/"日期": Date condition
+                - "time_period"/"时间段": Time period condition
+                - "average"/"平均值": Average condition
+                - "duplicate"/"重复值": Duplicate values condition
+                - "unique"/"唯一值": Unique values condition
+                - "formula"/"公式": Formula condition
+                - "top10"/"前10项": Top/Bottom items condition
+                - "data_bar"/"数据条": Data bar condition
+                - "color_scale"/"色阶": Color scale condition
+                - "icon_set"/"图标集": Icon set condition
+            - "criteria"/"operator": Comparison operator, supported values:
+                - "greater"/"gt"/">"/"大于": Greater than
+                - "greater_or_equal"/">="/"ge"/"大于等于": Greater than or equal
+                - "less"/"lt"/"<"/"小于": Less than
+                - "less_or_equal"/"<="/"le"/"小于等于": Less than or equal
+                - "equal"/"eq"/"="/"等于": Equal
+                - "not_equal"/"ne"/"!="/"<>"/"不等于": Not equal
+            - "value"/"first_formula": First value/formula for comparison
+            - "value2"/"second_formula": Second value/formula for comparison (optional)
+            - "format": Dict with formatting to apply when condition is met:
+                - "font_color": Hex color code for font
+                - "bg_color": Hex color code for background
 
     Returns:
         str: Success message confirming formatting was applied
     """
     try:
         full_path = get_excel_path(filepath)
-        from .formatting import format_range as format_range_func
+        from spire_xls_mcp.core.formatting import format_range as format_range_func
 
         result = format_range_func(
             filepath=full_path,
@@ -220,7 +245,7 @@ def read_data_from_excel(
     """
     try:
         full_path = get_excel_path(filepath)
-        from .data import read_excel_range
+        from spire_xls_mcp.core.data import read_excel_range
         result = read_excel_range(full_path, sheet_name, cell_range, preview_only)
         if not result:
             return "No data found in specified range"
@@ -274,7 +299,7 @@ def create_workbook(filepath: str, sheet_name: str = None) -> str:
     """
     try:
         full_path = get_excel_path(filepath)
-        from .workbook import create_workbook as create_workbook_impl
+        from spire_xls_mcp.core.workbook import create_workbook as create_workbook_impl
         result = create_workbook_impl(full_path, sheet_name)
         return f"Created workbook at {full_path}"
     except WorkbookError as e:
@@ -298,7 +323,7 @@ def create_worksheet(filepath: str, sheet_name: str) -> str:
     """
     try:
         full_path = get_excel_path(filepath)
-        from .workbook import create_sheet as create_worksheet_impl
+        from spire_xls_mcp.core.workbook import create_sheet as create_worksheet_impl
         result = create_worksheet_impl(full_path, sheet_name)
         return result["message"]
     except (ValidationError, WorkbookError) as e:
@@ -327,11 +352,14 @@ def create_chart(
         filepath (str): Path to the Excel file.
         sheet_name (str): Name of the worksheet. If the sheet does not exist, it will be created automatically.
         data_range (str): Range of cells containing data for the chart (e.g., "A1:B10").
-        chart_type (str): Type of chart to create (e.g., "column", "line", "pie", "bar", "scatter", etc. See EnumMapper for supported types).
+        chart_type (str): Type of chart to create (e.g., "column", "line", "pie", "bar", "scatter", etc.
+        See EnumMapper for supported types).
         target_cell (str): Cell where the top-left corner of the chart will be positioned (e.g., "D5").
         title (str, optional): Chart title. Default is an empty string.
-        x_axis (str, optional): X-axis title. Default is an empty string.
-        y_axis (str, optional): Y-axis title. Default is an empty string.
+        x_axis (str, optional): X-axis title. Default is an empty string,
+        If a pie chart is created, this parameter must be filled in and indicates the category label of the pie chart.
+        y_axis (str, optional): Y-axis title. Default is an empty string,
+        If a pie chart is created, this parameter must be filled in and indicates the value label of the pie chart.
         style (dict, optional): Dictionary with chart style settings. Supported keys include:
             - legend_position: Position of the legend ("right", "left", "top", "bottom").
             - has_legend: Whether to display the legend (bool).
@@ -422,22 +450,25 @@ def create_pivot_table(
 def copy_worksheet(
         filepath: str,
         source_sheet: str,
-        target_sheet: str
+        target_sheet: str,
+        target_filepath: str = None
 ) -> str:
     """
-    Copies a worksheet within the same workbook.
+    Copies a worksheet within the same workbook or to another workbook.
 
     Parameters:
-        filepath (str): Path to the Excel file
+        filepath (str): Path to the source Excel file
         source_sheet (str): Name of the worksheet to copy
         target_sheet (str): Name for the new worksheet copy
+        target_filepath (str, optional): Path to the target Excel file if copying to another workbook
 
     Returns:
         str: Success message confirming sheet was copied
     """
     try:
         full_path = get_excel_path(filepath)
-        result = copy_sheet(full_path, source_sheet, target_sheet)
+        target_path = get_excel_path(target_filepath) if target_filepath else full_path
+        result = copy_sheet(full_path, source_sheet, target_sheet, target_path)
         return result["message"]
     except (ValidationError, SheetError) as e:
         return f"Error: {str(e)}"
@@ -587,30 +618,34 @@ def copy_range(
         sheet_name: str,
         source_range: str,
         target_range: str,
-        target_sheet: str = None
+        target_sheet: str = None,
+        target_filepath: str = None
 ) -> str:
     """
-    Copies a range of cells to another location.
+    Copies a range of cells to another location within the same workbook or to another workbook.
 
     Parameters:
-        filepath (str): Path to the Excel file
+        filepath (str): Path to the source Excel file
         sheet_name (str): Name of the source worksheet
         source_range (str): Range of cells to copy (e.g., "A1:C5")
         target_range (str): Target range where cells will be copied
         target_sheet (str, optional): Name of the target worksheet if different from source
+        target_filepath (str, optional): Path to the target Excel file if copying to another workbook
 
     Returns:
         str: Success message confirming range was copied
     """
     try:
         full_path = get_excel_path(filepath)
-        from .sheet import copy_range_operation
+        target_path = get_excel_path(target_filepath) if target_filepath else full_path
+        from spire_xls_mcp.core.sheet import copy_range_operation
         result = copy_range_operation(
             full_path,
             sheet_name,
             source_range,
             target_range,
-            target_sheet
+            target_sheet,
+            target_path
         )
         return result["message"]
     except (ValidationError, SheetError) as e:
@@ -641,7 +676,7 @@ def delete_range(
     """
     try:
         full_path = get_excel_path(filepath)
-        from .sheet import delete_range as delete_range_operation
+        from spire_xls_mcp.core.sheet import delete_range as delete_range_operation
         result = delete_range_operation(
             full_path,
             sheet_name,
@@ -673,10 +708,13 @@ def apply_autofilter(
         filter_criteria (dict, optional): Dictionary of filter criteria
             Key: Column index (0-based)
             Value: Dictionary with filter settings:
-                "type": "value", "top10", "custom", "dynamic"
+                "type": "value", "top10", "custom"
                 "values": List of values for "value" type
                 "operator": "<", ">", "=", ">=", "<=", "<>" for "custom" type
                 "criteria": Criteria value for "custom" type
+                "operator2": Second operator for "custom" type when using AND/OR conditions
+                "criteria2": Second criteria value for "custom" type when using AND/OR conditions
+                "is_and": Boolean indicating whether to use AND (True) or OR (False) for dual conditions
                 "percent": True/False for "top10" type
                 "count": Count for "top10" type
                 "bottom": True/False for "top10" type
@@ -759,7 +797,7 @@ def export_to_json(
         full_path = get_excel_path(filepath)
         output_path = get_excel_path(output_filepath)
         
-        from .json_operations import export_to_json as export_json_impl
+        from spire_xls_mcp.core.json_operations import export_to_json as export_json_impl
         result = export_json_impl(
             full_path,
             sheet_name,
@@ -806,7 +844,7 @@ def import_from_json(
         json_path = get_excel_path(json_filepath)
         excel_path = get_excel_path(excel_filepath)
         
-        from .json_operations import import_from_json as import_json_impl
+        from spire_xls_mcp.core.json_operations import import_from_json as import_json_impl
         result = import_json_impl(
             json_path,
             excel_path,
@@ -911,7 +949,7 @@ def get_shape_image_base64(
     """
     try:
         full_path = get_excel_path(filepath)
-        from .sheet import get_shape_image_base64 as get_shape_img_b64
+        from spire_xls_mcp.core.sheet import get_shape_image_base64 as get_shape_img_b64
         return get_shape_img_b64(
             full_path,
             sheet_name,
