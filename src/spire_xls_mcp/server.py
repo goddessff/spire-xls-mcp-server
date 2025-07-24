@@ -340,10 +340,7 @@ def create_chart(
         data_range: str,
         chart_type: str,
         target_cell: str,
-        title: str = "",
-        x_axis: str = "",
-        y_axis: str = "",
-        style: Optional[Dict[str, Any]] = None
+        chart_options: Optional[Dict[str, Any]] = None
 ) -> str:
     """
     Creates a chart in a worksheet.
@@ -352,26 +349,24 @@ def create_chart(
         filepath (str): Path to the Excel file.
         sheet_name (str): Name of the worksheet. If the sheet does not exist, it will be created automatically.
         data_range (str): Range of cells containing data for the chart (e.g., "A1:B10").
-        chart_type (str): Type of chart to create (e.g., "column", "line", "pie", "bar", "scatter", etc.
-        See EnumMapper for supported types).
+        chart_type (str): Type of chart to create ("column", "line", "pie", "bar", "scatter", 
+        "doughnut", "area", "waterfall", "column_stacked", "column_100_percent_stacked", 
+        "bubble", "funnel", "treemap", "sunburst", "histogram", "box_and_whisker").
         target_cell (str): Cell where the top-left corner of the chart will be positioned (e.g., "D5").
-        title (str, optional): Chart title. Default is an empty string.
-        x_axis (str, optional): X-axis title. Default is an empty string,
-        If a pie chart is created, this parameter must be filled in and indicates the category label of the pie chart.
-        y_axis (str, optional): Y-axis title. Default is an empty string,
-        If a pie chart is created, this parameter must be filled in and indicates the value label of the pie chart.
-        style (dict, optional): Dictionary with chart style settings. Supported keys include:
-            - legend_position: Position of the legend ("right", "left", "top", "bottom").
-            - has_legend: Whether to display the legend (bool).
-            - has_data_labels: Whether to display data labels for the first series (bool).
-            - width: Chart width in pixels (default 480).
-            - height: Chart height in pixels (default 300).
+        chart_options (dict, optional): Dictionary with chart options. Supported keys include:
+            - title (str): Chart title.
+            - x_axis (str): category labels for pie charts.
+            - y_axis (str): values for pie charts.
+            - bubbles (str): range of the bubble chart.
+            - style (dict): Chart style settings:
+                - legend_position: "right", "left", "top", "bottom".
+                - has_legend: bool.
+                - has_data_labels: bool.
+                - width: Chart width in pixels.
+                - height: Chart height in pixels.
 
     Returns:
         str: Success message, e.g., "Chart created successfully".
-
-    Raises:
-        ChartError: If chart creation fails or parameters are invalid.
     """
     try:
         full_path = get_excel_path(filepath)
@@ -381,10 +376,7 @@ def create_chart(
             data_range=data_range,
             chart_type=chart_type,
             target_cell=target_cell,
-            title=title,
-            x_axis=x_axis,
-            y_axis=y_axis,
-            style=style
+            chart_options=chart_options
         )
         return result["message"]
     except (ValidationError, ChartError) as e:
@@ -418,9 +410,9 @@ def create_pivot_table(
         rows (list): List of field names to use as row labels
         values (dict): Dictionary mapping field names to aggregation functions
             Key: Field name
-            Value: Aggregation function ("sum", "count", "average", "max", "min", etc.)
+            Value: Aggregation function ("sum", "count", "average", "max", "min",)
         columns (list, optional): List of field names to use as column labels
-        agg_func (str, optional): Default aggregation function ("sum", "count", etc.)
+        agg_func (str, optional): Default aggregation function ("sum", "count", "average","min", "max".)
 
     Returns:
         str: Success message confirming pivot table creation
