@@ -20,8 +20,6 @@ def _configure_waterfall_chart(chart: Chart, sheet: Worksheet, chart_options: Di
 
 def _configure_bubble_chart(chart: Chart, sheet: Worksheet, chart_options: Dict[str, Any]):
     """Configures a bubble chart."""
-    chart.Series.Clear()
-    chart.Series.Add()
     bubbles = chart_options.get('bubbles')
     if bubbles:
         chart.Series[0].Bubbles = sheet.Range[bubbles]
@@ -35,9 +33,9 @@ CHART_CONFIGURATORS: Dict[ExcelChartType, Callable[[Chart, Worksheet, Dict[str, 
 
 def _configure_default_chart(chart: Chart, sheet: Worksheet, chart_options: Dict[str, Any]):
     """Configures a default chart with axis titles."""
-    x_axis = chart_options.get('x_axis')
-    y_axis = chart_options.get('y_axis')
-    
+    pass
+
+
 def create_chart_in_sheet(
         input_filepath: str,
         output_filepath: str,
@@ -73,7 +71,36 @@ def create_chart_in_sheet(
 
         chart = chart_sheet.Charts.Add()
         chart.ChartType = EnumMapper.get_chart_type_enum(chart_type)
-        chart.DataRange = data_sheet.Range[data_range]
+
+        if axis_titles := chart_options.get('axis_titles'):
+            if x_title := axis_titles.get('x_axis_title'):
+                chart.PrimaryCategoryAxis.Title = x_title
+                chart.PrimaryCategoryAxis.HasTitle = True
+            if y_title := axis_titles.get('y_axis_title'):
+                chart.PrimaryValueAxis.Title = y_title
+                chart.PrimaryValueAxis.HasTitle = True
+            
+        if series_data := chart_options.get('series'):
+            chart.Series.Clear()
+            chart.SeriesDataFromRange = False
+
+            common_category_labels_range = chart_options.get('category_labels')
+
+            for s in series_data:
+                series_name = s.get('name', '')
+                values_range = s.get('values')
+
+                if not values_range:
+                    continue
+
+                cs = chart.Series.Add(series_name)
+                cs.Values = data_sheet.Range[values_range]
+
+                category_labels_range = s.get('category_labels', common_category_labels_range)
+                if category_labels_range:
+                    cs.CategoryLabels = data_sheet.Range[category_labels_range]
+        else:
+            chart.DataRange = data_sheet.Range[data_range]
 
         target_range = chart_sheet.Range[target_cell]
         chart.LeftColumn = target_range.Column
@@ -82,22 +109,10 @@ def create_chart_in_sheet(
         if title := chart_options.get("title"):
             chart.ChartTitle = title
 
-        # Set Series Data
-        x_axis = chart_options.get('x_axis')
-        y_axis = chart_options.get('y_axis')
-        cs = chart.Series[0]
-        if x_axis:
-            chart.SeriesDataFromRange = False
-            cs.CategoryLabels = data_sheet.Range[x_axis]
-        if y_axis:
-            chart.SeriesDataFromRange = False
-            cs.Values = data_sheet.Range[y_axis]
-            
         # Get the specific configurator for the chart type, or the default one
         configurator = CHART_CONFIGURATORS.get(chart.ChartType, _configure_default_chart)
         # Pass all relevant options to the configurator
         options_for_configurator = chart_options.copy()
-        options_for_configurator['data_range'] = data_range
         configurator(chart, data_sheet, options_for_configurator)
         
 

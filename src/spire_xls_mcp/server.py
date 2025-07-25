@@ -352,15 +352,16 @@ def create_chart(
         output_filepath (str,optional): Path to the output Excel file,default use input_filepath.
         data_sheet_name (str,optional): Name of the worksheet containing the data,default use chart_sheet_name.
         chart_sheet_name (str): Name of the worksheet where the chart will be inserted.
-        data_range (str): Range of cells containing data for the chart (e.g., "A1:B10").
+        data_range (str): Range of cells containing data for the chart (e.g., "A1:B10"). This is used for charts with a single data source and is ignored if `series` is provided in `chart_options`.
         chart_type (str): Type of chart to create ("column", "line", "pie", "bar", "scatter", 
         "doughnut", "area", "waterfall", "column_stacked", "column_100_percent_stacked", 
         "bubble", "funnel", "treemap", "sunburst", "histogram", "box_and_whisker").
         target_cell (str): Cell where the top-left corner of the chart will be positioned (e.g., "D5").
         chart_options (dict, optional): Dictionary with chart options. Supported keys include:
             - title (str): Chart title.
-            - x_axis (str): category labels for pie charts.
-            - y_axis (str): values for pie charts.
+            - axis_titles (dict): A dictionary for axis titles, e.g., `{"x_axis_title": "X-Axis", "y_axis_title": "Y-Axis"}`.
+            - series (list[dict]): A list of data series for multi-series charts. Each dict can have `name`, `values`, and `category_labels`.
+            - category_labels (str): A common range for category labels for all series.
             - bubbles (str): range of the bubble chart.
             - style (dict): Chart style settings:
                 - legend_position: "right", "left", "top", "bottom".
@@ -400,8 +401,10 @@ def create_chart(
 
 @mcp.tool()
 def create_pivot_table(
-        filepath: str,
-        sheet_name: str,
+        input_filepath: str,
+        output_filepath: str,
+        data_sheet_name: str,
+        pivot_sheet_name: str,
         pivot_name: str,
         data_range: str,
         locate_range: str,
@@ -414,9 +417,10 @@ def create_pivot_table(
     Creates a pivot table in a worksheet.
 
     Parameters:
-        filepath (str): Path to the Excel file
-        sheet_name (str): Name of the source worksheet
-        pivot_name (str): Name for the pivot table
+        input_filepath (str): Path to the input Excel file.
+        output_filepath (str): Path to the output Excel file.
+        data_sheet_name (str): Name of the worksheet containing the source data.
+        pivot_sheet_name (str): Name of the worksheet where the pivot table will be inserted.        pivot_name (str): Name for the pivot table
         data_range (str): Range containing source data (e.g., "A1:D10")
         locate_range (str): Range where the pivot table will be placed
         rows (list): List of field names to use as row labels
@@ -430,10 +434,13 @@ def create_pivot_table(
         str: Success message confirming pivot table creation
     """
     try:
-        full_path = get_excel_path(filepath)
+        input_full_path = get_excel_path(input_filepath)
+        output_full_path = get_excel_path(output_filepath)
         result = create_pivot_table_impl(
-            filepath=full_path,
-            sheet_name=sheet_name,
+            input_filepath=input_full_path,
+            output_filepath=output_full_path,
+            data_sheet_name=data_sheet_name,
+            pivot_sheet_name=pivot_sheet_name,
             pivot_name=pivot_name,
             data_range=data_range,
             locate_range=locate_range,
