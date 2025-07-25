@@ -335,8 +335,10 @@ def create_worksheet(filepath: str, sheet_name: str) -> str:
 
 @mcp.tool()
 def create_chart(
-        filepath: str,
-        sheet_name: str,
+        input_filepath: str,
+        output_filepath: Optional[str],
+        data_sheet_name: Optional[str],
+        chart_sheet_name: str,
         data_range: str,
         chart_type: str,
         target_cell: str,
@@ -346,8 +348,10 @@ def create_chart(
     Creates a chart in a worksheet.
 
     Parameters:
-        filepath (str): Path to the Excel file.
-        sheet_name (str): Name of the worksheet. If the sheet does not exist, it will be created automatically.
+        input_filepath (str): Path to the input Excel file.
+        output_filepath (str,optional): Path to the output Excel file,default use input_filepath.
+        data_sheet_name (str,optional): Name of the worksheet containing the data,default use chart_sheet_name.
+        chart_sheet_name (str): Name of the worksheet where the chart will be inserted.
         data_range (str): Range of cells containing data for the chart (e.g., "A1:B10").
         chart_type (str): Type of chart to create ("column", "line", "pie", "bar", "scatter", 
         "doughnut", "area", "waterfall", "column_stacked", "column_100_percent_stacked", 
@@ -369,10 +373,18 @@ def create_chart(
         str: Success message, e.g., "Chart created successfully".
     """
     try:
-        full_path = get_excel_path(filepath)
+        input_full_path = get_excel_path(input_filepath)
+        if output_filepath is None:
+            output_full_path = input_full_path
+        else:
+            output_full_path = get_excel_path(output_filepath)
+        if data_sheet_name is None:
+            data_sheet_name = chart_sheet_name
         result = create_chart_impl(
-            filepath=full_path,
-            sheet_name=sheet_name,
+            input_filepath=input_full_path,
+            output_filepath=output_full_path,
+            data_sheet_name=data_sheet_name,
+            chart_sheet_name=chart_sheet_name,
             data_range=data_range,
             chart_type=chart_type,
             target_cell=target_cell,
