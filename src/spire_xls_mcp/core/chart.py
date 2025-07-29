@@ -143,7 +143,26 @@ def create_chart_in_sheet(
         chart.Height = height
 
         wb.SaveToFile(output_filepath)
-        return {"message": "Chart created successfully"}
+        return {
+            "message": "Chart created successfully",
+            "details": {
+                "chart_name": chart.ChartTitle,
+                "chart_type": chart_type,
+                "sheet_name": chart_sheet_name,
+                "data_sheet_name": data_sheet_name,
+                "data_range": data_range,
+                "position": {
+                    "target_cell": target_cell,
+                    "top_row": chart.TopRow,
+                    "left_column": chart.LeftColumn
+                },
+                "dimensions": {
+                    "width_pixels": chart.Width,
+                    "height_pixels": chart.Height
+                },
+                "output_filepath": output_filepath
+            }
+        }
 
     except Exception as e:
         logger.error(f"Failed to create chart: {e}")

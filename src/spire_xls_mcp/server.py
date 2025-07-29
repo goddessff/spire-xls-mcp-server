@@ -1,12 +1,15 @@
+import json
 import logging
 import sys
 import os
+import functools
 from typing import Any, List, Dict, Optional
 
 from mcp.server.fastmcp import FastMCP
 
 # Import exceptions
 from spire_xls_mcp.utils.exceptions import (
+    ExcelMCPError,
     ValidationError,
     WorkbookError,
     SheetError,
@@ -18,13 +21,13 @@ from spire_xls_mcp.utils.exceptions import (
     ConversionError
 )
 
-
-from spire_xls_mcp.core.validation import (
-    validate_range_in_sheet_operation as validate_range_impl
-)
+# Import core functions
+from spire_xls_mcp.core.calculations import apply_formula as apply_formula_impl
 from spire_xls_mcp.core.chart import create_chart_in_sheet as create_chart_impl
-from spire_xls_mcp.core.workbook import get_workbook_info
-from spire_xls_mcp.core.data import write_data
+from spire_xls_mcp.core.conversion import convert_workbook as convert_workbook_impl
+from spire_xls_mcp.core.data import read_excel_range, write_data
+from spire_xls_mcp.core.formatting import format_range as format_range_func
+from spire_xls_mcp.core.json_operations import export_to_json as export_json_impl, import_from_json as import_json_impl
 from spire_xls_mcp.core.pivot import create_pivot_table as create_pivot_table_impl
 from spire_xls_mcp.core.sheet import (
     copy_sheet,
@@ -32,9 +35,13 @@ from spire_xls_mcp.core.sheet import (
     rename_sheet,
     merge_range,
     unmerge_range,
-    apply_autofilter as apply_autofilter_impl
+    copy_range_operation,
+    delete_range as delete_range_operation,
+    apply_autofilter as apply_autofilter_impl,
+    get_shape_image_base64 as get_shape_img_b64
 )
-from spire_xls_mcp.core.conversion import convert_workbook as convert_workbook_impl
+from spire_xls_mcp.core.validation import validate_range_in_sheet_operation as validate_range_impl
+from spire_xls_mcp.core.workbook import get_workbook_info, create_workbook as create_workbook_impl, create_sheet as create_worksheet_impl
 
 # Configure logging
 logging.basicConfig(
@@ -52,9 +59,6 @@ logger = logging.getLogger("spire-xls-mcp")
 # Get Excel files path from environment or use default
 EXCEL_FILES_PATH = os.environ.get("EXCEL_FILES_PATH", "./excel_files")
 
-# # Create the directory if it doesn't exist
-# os.makedirs(EXCEL_FILES_PATH, exist_ok=True)
-
 # Initialize FastMCP server
 mcp = FastMCP(
     "spire-xls-mcp",
@@ -70,7 +74,6 @@ mcp = FastMCP(
     }
 )
 
-
 def get_excel_path(filename: str) -> str:
     """Get full path to Excel file.
     
@@ -80,15 +83,26 @@ def get_excel_path(filename: str) -> str:
     Returns:
         Full path to Excel file
     """
-    # If filename is already an absolute path, return it
-    if os.path.isabs(filename):
+    if not filename or os.path.isabs(filename):
         return filename
-
-    # Use the configured Excel files path
     return os.path.join(EXCEL_FILES_PATH, filename)
 
+def tool_exception_handler(func):
+    """A decorator to handle exceptions for all tool functions."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except ExcelMCPError as e:
+            logger.error(f"Error in tool '{func.__name__}': {e}")
+            return f"Error: {str(e)}"
+        except Exception as e:
+            logger.error(f"An unexpected error occurred in tool '{func.__name__}': {e}")
+            raise
+    return wrapper
 
 @mcp.tool()
+@tool_exception_handler
 def apply_formula(
         filepath: str,
         sheet_name: str,
@@ -107,20 +121,12 @@ def apply_formula(
     Returns:
         str: Success message confirming formula application
     """
-    try:
-        full_path = get_excel_path(filepath)
-
-        from spire_xls_mcp.core.calculations import apply_formula as apply_formula_impl
-        result = apply_formula_impl(full_path, sheet_name, cell, formula)
-        return result["message"]
-    except (ValidationError, CalculationError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error applying formula: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = apply_formula_impl(full_path, sheet_name, cell, formula)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def format_range(
         filepath: str,
         sheet_name: str,
@@ -179,7 +185,7 @@ def format_range(
                 - "greater_or_equal"/">="/"ge"/"大于等于": Greater than or equal
                 - "less"/"lt"/"<"/"小于": Less than
                 - "less_or_equal"/"<="/"le"/"小于等于": Less than or equal
-                - "equal"/"eq"/"="/"等于": Equal
+                - "equal"/"eq"/"="/"/"等于": Equal
                 - "not_equal"/"ne"/"!="/"<>"/"不等于": Not equal
             - "value"/"first_formula": First value/formula for comparison
             - "value2"/"second_formula": Second value/formula for comparison (optional)
@@ -190,38 +196,30 @@ def format_range(
     Returns:
         str: Success message confirming formatting was applied
     """
-    try:
-        full_path = get_excel_path(filepath)
-        from spire_xls_mcp.core.formatting import format_range as format_range_func
-
-        result = format_range_func(
-            filepath=full_path,
-            sheet_name=sheet_name,
-            cell_range=cell_range,
-            bold=bold,
-            italic=italic,
-            underline=underline,
-            font_size=font_size,
-            font_color=font_color,
-            bg_color=bg_color,
-            border_style=border_style,
-            border_color=border_color,
-            number_format=number_format,
-            alignment=alignment,
-            wrap_text=wrap_text,
-            merge_cells=merge_cells,
-            protection=protection,
-            conditional_format=conditional_format
-        )
-        return "Range formatted successfully"
-    except (ValidationError, FormattingError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error formatting range: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = format_range_func(
+        filepath=full_path,
+        sheet_name=sheet_name,
+        cell_range=cell_range,
+        bold=bold,
+        italic=italic,
+        underline=underline,
+        font_size=font_size,
+        font_color=font_color,
+        bg_color=bg_color,
+        border_style=border_style,
+        border_color=border_color,
+        number_format=number_format,
+        alignment=alignment,
+        wrap_text=wrap_text,
+        merge_cells=merge_cells,
+        protection=protection,
+        conditional_format=conditional_format
+    )
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def read_data_from_excel(
         filepath: str,
         sheet_name: str,
@@ -243,19 +241,14 @@ def read_data_from_excel(
     Returns:
         dict: Column-first nested dictionary with cell data
     """
-    try:
-        full_path = get_excel_path(filepath)
-        from spire_xls_mcp.core.data import read_excel_range
-        result = read_excel_range(full_path, sheet_name, cell_range, preview_only)
-        if not result:
-            return "No data found in specified range"
-        return result
-    except Exception as e:
-        logger.error(f"Error reading data: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = read_excel_range(full_path, sheet_name, cell_range, preview_only)
+    if not result:
+        return "No data found in specified range"
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def write_data_to_excel(
         filepath: str,
         sheet_name: str,
@@ -274,18 +267,12 @@ def write_data_to_excel(
     Returns:
         str: Success message confirming data was written
     """
-    try:
-        full_path = get_excel_path(filepath)
-        result = write_data(full_path, sheet_name, data, start_cell)
-        return result["message"]
-    except (ValidationError, DataError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error writing data: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = write_data(full_path, sheet_name, data, start_cell)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def create_workbook(filepath: str, sheet_name: str = None) -> str:
     """
     Creates a new Excel workbook.
@@ -297,19 +284,12 @@ def create_workbook(filepath: str, sheet_name: str = None) -> str:
     Returns:
         str: Success message with the created workbook path
     """
-    try:
-        full_path = get_excel_path(filepath)
-        from spire_xls_mcp.core.workbook import create_workbook as create_workbook_impl
-        result = create_workbook_impl(full_path, sheet_name)
-        return f"Created workbook at {full_path}"
-    except WorkbookError as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error creating workbook: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = create_workbook_impl(full_path, sheet_name)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def create_worksheet(filepath: str, sheet_name: str) -> str:
     """
     Creates a new worksheet in an existing workbook.
@@ -321,19 +301,12 @@ def create_worksheet(filepath: str, sheet_name: str) -> str:
     Returns:
         str: Success message confirming sheet creation
     """
-    try:
-        full_path = get_excel_path(filepath)
-        from spire_xls_mcp.core.workbook import create_sheet as create_worksheet_impl
-        result = create_worksheet_impl(full_path, sheet_name)
-        return result["message"]
-    except (ValidationError, WorkbookError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error creating worksheet: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = create_worksheet_impl(full_path, sheet_name)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def create_chart(
         input_filepath: str,
         output_filepath: Optional[str],
@@ -373,33 +346,25 @@ def create_chart(
     Returns:
         str: Success message, e.g., "Chart created successfully".
     """
-    try:
-        input_full_path = get_excel_path(input_filepath)
-        if output_filepath is None:
-            output_full_path = input_full_path
-        else:
-            output_full_path = get_excel_path(output_filepath)
-        if data_sheet_name is None:
-            data_sheet_name = chart_sheet_name
-        result = create_chart_impl(
-            input_filepath=input_full_path,
-            output_filepath=output_full_path,
-            data_sheet_name=data_sheet_name,
-            chart_sheet_name=chart_sheet_name,
-            data_range=data_range,
-            chart_type=chart_type,
-            target_cell=target_cell,
-            chart_options=chart_options
-        )
-        return result["message"]
-    except (ValidationError, ChartError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error creating chart: {e}")
-        raise
-
+    input_full_path = get_excel_path(input_filepath)
+    output_full_path = get_excel_path(output_filepath) if output_filepath else input_full_path
+    if data_sheet_name is None:
+        data_sheet_name = chart_sheet_name
+        
+    result = create_chart_impl(
+        input_filepath=input_full_path,
+        output_filepath=output_full_path,
+        data_sheet_name=data_sheet_name,
+        chart_sheet_name=chart_sheet_name,
+        data_range=data_range,
+        chart_type=chart_type,
+        target_cell=target_cell,
+        chart_options=chart_options
+    )
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def create_pivot_table(
         input_filepath: str,
         output_filepath: str,
@@ -433,31 +398,25 @@ def create_pivot_table(
     Returns:
         str: Success message confirming pivot table creation
     """
-    try:
-        input_full_path = get_excel_path(input_filepath)
-        output_full_path = get_excel_path(output_filepath)
-        result = create_pivot_table_impl(
-            input_filepath=input_full_path,
-            output_filepath=output_full_path,
-            data_sheet_name=data_sheet_name,
-            pivot_sheet_name=pivot_sheet_name,
-            pivot_name=pivot_name,
-            data_range=data_range,
-            locate_range=locate_range,
-            rows=rows,
-            values=values,
-            columns=columns or [],
-            agg_func=agg_func
-        )
-        return result["message"]
-    except (ValidationError, PivotError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error creating pivot table: {e}")
-        raise
-
+    input_full_path = get_excel_path(input_filepath)
+    output_full_path = get_excel_path(output_filepath)
+    result = create_pivot_table_impl(
+        input_filepath=input_full_path,
+        output_filepath=output_full_path,
+        data_sheet_name=data_sheet_name,
+        pivot_sheet_name=pivot_sheet_name,
+        pivot_name=pivot_name,
+        data_range=data_range,
+        locate_range=locate_range,
+        rows=rows,
+        values=values,
+        columns=columns or [],
+        agg_func=agg_func
+    )
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def copy_worksheet(
         filepath: str,
         source_sheet: str,
@@ -476,19 +435,13 @@ def copy_worksheet(
     Returns:
         str: Success message confirming sheet was copied
     """
-    try:
-        full_path = get_excel_path(filepath)
-        target_path = get_excel_path(target_filepath) if target_filepath else full_path
-        result = copy_sheet(full_path, source_sheet, target_sheet, target_path)
-        return result["message"]
-    except (ValidationError, SheetError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error copying worksheet: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    target_path = get_excel_path(target_filepath) if target_filepath else full_path
+    result = copy_sheet(full_path, source_sheet, target_sheet, target_path)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def delete_worksheet(
         filepath: str,
         sheet_name: str
@@ -503,18 +456,12 @@ def delete_worksheet(
     Returns:
         str: Success message confirming worksheet deletion
     """
-    try:
-        full_path = get_excel_path(filepath)
-        result = delete_sheet(full_path, sheet_name)
-        return result["message"]
-    except (ValidationError, SheetError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error deleting worksheet: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = delete_sheet(full_path, sheet_name)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def rename_worksheet(
         filepath: str,
         old_name: str,
@@ -531,18 +478,12 @@ def rename_worksheet(
     Returns:
         str: Success message confirming the rename operation
     """
-    try:
-        full_path = get_excel_path(filepath)
-        result = rename_sheet(full_path, old_name, new_name)
-        return result["message"]
-    except (ValidationError, SheetError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error renaming worksheet: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = rename_sheet(full_path, old_name, new_name)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def get_workbook_metadata(
         filepath: str,
         include_ranges: bool = False
@@ -562,18 +503,12 @@ def get_workbook_metadata(
             - modified: Last modification timestamp
             - used_ranges: Dictionary mapping sheet names to their used data ranges (if include_ranges=True)
     """
-    try:
-        full_path = get_excel_path(filepath)
-        result = get_workbook_info(full_path, include_ranges=include_ranges)
-        return str(result)
-    except WorkbookError as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error getting workbook metadata: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = get_workbook_info(full_path, include_ranges=include_ranges)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def merge_cells(filepath: str,
                 sheet_name: str,
                 cell_range_list: List[str]) -> str:
@@ -588,18 +523,12 @@ def merge_cells(filepath: str,
     Returns:
         str: Success message confirming cells were merged
     """
-    try:
-        full_path = get_excel_path(filepath)
-        result = merge_range(full_path, sheet_name, cell_range_list)
-        return result["message"]
-    except (ValidationError, SheetError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error merging cells: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = merge_range(full_path, sheet_name, cell_range_list)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def unmerge_cells(filepath: str, sheet_name: str, cell_range: str) -> str:
     """
     Unmerges a range of previously merged cells.
@@ -612,18 +541,12 @@ def unmerge_cells(filepath: str, sheet_name: str, cell_range: str) -> str:
     Returns:
         str: Success message confirming cells were unmerged
     """
-    try:
-        full_path = get_excel_path(filepath)
-        result = unmerge_range(full_path, sheet_name, cell_range)
-        return result["message"]
-    except (ValidationError, SheetError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error unmerging cells: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = unmerge_range(full_path, sheet_name, cell_range)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def copy_range(
         filepath: str,
         sheet_name: str,
@@ -646,27 +569,20 @@ def copy_range(
     Returns:
         str: Success message confirming range was copied
     """
-    try:
-        full_path = get_excel_path(filepath)
-        target_path = get_excel_path(target_filepath) if target_filepath else full_path
-        from spire_xls_mcp.core.sheet import copy_range_operation
-        result = copy_range_operation(
-            full_path,
-            sheet_name,
-            source_range,
-            target_range,
-            target_sheet,
-            target_path
-        )
-        return result["message"]
-    except (ValidationError, SheetError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error copying range: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    target_path = get_excel_path(target_filepath) if target_filepath else full_path
+    result = copy_range_operation(
+        full_path,
+        sheet_name,
+        source_range,
+        target_range,
+        target_sheet,
+        target_path
+    )
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def delete_range(
         filepath: str,
         sheet_name: str,
@@ -685,24 +601,17 @@ def delete_range(
     Returns:
         str: Success message describing the deletion and shift operation
     """
-    try:
-        full_path = get_excel_path(filepath)
-        from spire_xls_mcp.core.sheet import delete_range as delete_range_operation
-        result = delete_range_operation(
-            full_path,
-            sheet_name,
-            cell_range,
-            shift_direction
-        )
-        return result["message"]
-    except (ValidationError, SheetError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error deleting range: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = delete_range_operation(
+        full_path,
+        sheet_name,
+        cell_range,
+        shift_direction
+    )
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def apply_autofilter(
         filepath: str,
         sheet_name: str,
@@ -733,23 +642,17 @@ def apply_autofilter(
     Returns:
         str: Success or error message
     """
-    try:
-        full_path = get_excel_path(filepath)
-        result = apply_autofilter_impl(
-            full_path,
-            sheet_name,
-            cell_range,
-            filter_criteria
-        )
-        return result["message"]
-    except (ValidationError, SheetError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error applying autofilter: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = apply_autofilter_impl(
+        full_path,
+        sheet_name,
+        cell_range,
+        filter_criteria
+    )
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def validate_excel_range(
         filepath: str,
         sheet_name: str,
@@ -766,18 +669,12 @@ def validate_excel_range(
     Returns:
         str: Validation result including details about the actual data range in the sheet
     """
-    try:
-        full_path = get_excel_path(filepath)
-        result = validate_range_impl(full_path, sheet_name, cell_range)
-        return result["message"]
-    except ValidationError as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error validating range: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = validate_range_impl(full_path, sheet_name, cell_range)
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def export_to_json(
         filepath: str,
         sheet_name: str,
@@ -804,28 +701,21 @@ def export_to_json(
     Returns:
         str: Success message with the path to the created JSON file
     """
-    try:
-        full_path = get_excel_path(filepath)
-        output_path = get_excel_path(output_filepath)
-        
-        from spire_xls_mcp.core.json_operations import export_to_json as export_json_impl
-        result = export_json_impl(
-            full_path,
-            sheet_name,
-            cell_range,
-            output_path,
-            include_headers,
-            options
-        )
-        return result["message"]
-    except (ValidationError, DataError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error exporting to JSON: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    output_path = get_excel_path(output_filepath)
+    
+    result = export_json_impl(
+        full_path,
+        sheet_name,
+        cell_range,
+        output_path,
+        include_headers,
+        options
+    )
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def import_from_json(
         json_filepath: str,
         excel_filepath: str,
@@ -851,28 +741,21 @@ def import_from_json(
     Returns:
         str: Success message with the path to the updated Excel file
     """
-    try:
-        json_path = get_excel_path(json_filepath)
-        excel_path = get_excel_path(excel_filepath)
-        
-        from spire_xls_mcp.core.json_operations import import_from_json as import_json_impl
-        result = import_json_impl(
-            json_path,
-            excel_path,
-            sheet_name,
-            start_cell,
-            create_sheet,
-            options
-        )
-        return result["message"]
-    except (ValidationError, DataError) as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error importing from JSON: {e}")
-        raise
-
+    json_path = get_excel_path(json_filepath)
+    excel_path = get_excel_path(excel_filepath)
+    
+    result = import_json_impl(
+        json_path,
+        excel_path,
+        sheet_name,
+        start_cell,
+        create_sheet,
+        options
+    )
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def convert_excel(
         filepath: str,
         output_filepath: str,
@@ -916,27 +799,22 @@ def convert_excel(
     Returns:
         str: Success message or error description
     """
-    try:
-        full_path = get_excel_path(filepath)
-        output_path = get_excel_path(output_filepath)
-        
-        result = convert_workbook_impl(
-            filepath=full_path,
-            output_filepath=output_path,
-            format_type=format_type,
-            options=options,
-            sheet_name=sheet_name,
-            cell_range=cell_range
-        )
-        
-        return result["message"]
-    except ConversionError as e:
-        return f"Error: {str(e)}"
-    except Exception as e:
-        logger.error(f"Error converting file: {e}")
-        raise ConversionError(f"Failed to convert Excel file: {str(e)}")
+    full_path = get_excel_path(filepath)
+    output_path = get_excel_path(output_filepath)
+    
+    result = convert_workbook_impl(
+        filepath=full_path,
+        output_filepath=output_path,
+        format_type=format_type,
+        options=options,
+        sheet_name=sheet_name,
+        cell_range=cell_range
+    )
+    
+    return json.dumps(result)
 
 @mcp.tool()
+@tool_exception_handler
 def get_shape_image_base64(
         filepath: str,
         sheet_name: str,
@@ -958,19 +836,14 @@ def get_shape_image_base64(
     Note: Either shape_name or shape_index must be provided. If the worksheet has no 
     shapes or the specified shape doesn't exist, an error will be returned.
     """
-    try:
-        full_path = get_excel_path(filepath)
-        from spire_xls_mcp.core.sheet import get_shape_image_base64 as get_shape_img_b64
-        return get_shape_img_b64(
-            full_path,
-            sheet_name,
-            shape_name,
-            shape_index
-        )
-    except Exception as e:
-        logger.error(f"Error getting shape image base64: {e}")
-        raise
-
+    full_path = get_excel_path(filepath)
+    result = get_shape_img_b64(
+        full_path,
+        sheet_name,
+        shape_name,
+        shape_index
+    )
+    return json.dumps(result)
 
 async def run_server():
     """Run the Spire.Xls MCP Server."""
