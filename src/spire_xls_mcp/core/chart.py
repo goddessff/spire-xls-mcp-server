@@ -143,10 +143,17 @@ def create_chart_in_sheet(
         chart.Height = height
 
         wb.SaveToFile(output_filepath)
+        chart_title = None
+        # HasChartTitle has bug
+        try:
+            chart_title = chart.ChartTitle if chart.HasChartTitle else None
+        except Exception as e:
+            pass
+        
         return {
             "message": "Chart created successfully",
             "details": {
-                "chart_name": chart.ChartTitle,
+                "chart_name": chart_title,
                 "chart_type": chart_type,
                 "sheet_name": chart_sheet_name,
                 "data_sheet_name": data_sheet_name,
